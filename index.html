@@ -33,6 +33,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.9/beautify.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.9/beautify-css.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.9/beautify-html.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 /* Layout: one narrow working column — input card on top, fetched files listed below as code sheets. */
 :root{
@@ -96,6 +97,24 @@ details.file summary::-webkit-details-marker{display:none}
 .code .more{color:var(--code-num);padding:8px 14px;display:block}
 .ftools{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line);flex-wrap:wrap}
 .ftools .btn{padding:7px 12px;font-size:13px}
+.ftools select{width:auto;font:600 13px var(--sans);padding:7px 8px}
+.ftools .dl{display:flex;gap:0;margin-left:auto}
+.ftools .dl select{border-radius:8px 0 0 8px;border-right:0}
+.ftools .dl .btn{border-radius:0 8px 8px 0;background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.export{margin-top:14px;display:flex;flex-direction:column;gap:12px}
+.export h2{margin:0;font-size:17px}
+.export .sub2{margin:-6px 0 0;font-size:13px;color:var(--muted)}
+.xgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.xbtn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:12px 14px;border-radius:8px;border:1px solid var(--line);background:var(--sunk);color:var(--fg);cursor:pointer;font-family:var(--sans)}
+.xbtn b{font-size:14px}
+.xbtn span{font-size:12px;color:var(--muted)}
+.xbtn.main{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.xbtn.main span{color:var(--accent-ink);opacity:.85}
+.xbtn:disabled{opacity:.45;cursor:not-allowed}
+.recent{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.recent .lbl{font-size:12px;color:var(--muted)}
+.chipbtn{font:12px var(--mono);padding:4px 9px;border-radius:14px;border:1px solid var(--line);background:var(--sunk);color:var(--fg);cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chipbtn.clear{font-family:var(--sans);color:var(--muted)}
 .note{font-size:13px;color:var(--muted);background:var(--sunk);border-radius:8px;padding:10px 12px;margin:0}
 .note b{color:var(--fg)}
 footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
@@ -134,6 +153,7 @@ footer b{color:var(--fg)}
       <label class="f" for="url">Website link
         <input type="url" id="url" inputmode="url" autocomplete="url" placeholder="https://username.github.io/my-erp/" spellcheck="false">
       </label>
+      <div class="recent" id="recent" hidden></div>
     </div>
     <div id="panePaste" hidden>
       <label class="f" for="pasteName">File ka naam
@@ -148,6 +168,7 @@ footer b{color:var(--fg)}
       <label class="chk"><input type="checkbox" id="optLinked" checked><span>Linked CSS / JS files bhi laao<small>Page se jude alag files bhi PDF mein jaayenge</small></span></label>
       <label class="chk"><input type="checkbox" id="optSkipLib" checked><span>CDN libraries skip karo<small>jQuery, React, Chart.js jaise bade library code chhod do</small></span></label>
       <label class="chk"><input type="checkbox" id="optPretty" checked><span>Minified code readable banao<small>Ek line mein dabe code ko format karta hai</small></span></label>
+      <label class="chk"><input type="checkbox" id="optShortData" checked><span>PDF mein image data chhota karo<small>Icon/photo ka lamba base64 text hata kar pages bachata hai. Poora backup chahiye to off karo</small></span></label>
     </div>
 
     <div class="row">
@@ -165,6 +186,17 @@ footer b{color:var(--fg)}
 
   <section id="results" hidden>
     <div class="summary" id="summary"></div>
+    <div class="card export" id="exportBox">
+      <h2>Files download karo</h2>
+      <p class="sub2">Ek click mein code ko asli file ki tarah save karo. Har file ke neeche bhi apna format chun kar download kar sakte ho.</p>
+      <div class="xgrid">
+        <button type="button" class="xbtn main" id="xSingle"><b>Ek HTML file</b><span>CSS + JS andar jod kar, seedha chalne wali</span></button>
+        <button type="button" class="xbtn" id="xZip"><b>ZIP (saari files)</b><span>Folder ke saath, original naam</span></button>
+        <button type="button" class="xbtn" id="xTxt"><b>Ek .txt mein sab</b><span>Saari files ek text file mein</span></button>
+        <button type="button" class="xbtn" id="xMd"><b>Notes (.md)</b><span>Headings + code blocks</span></button>
+      </div>
+      <label class="chk"><input type="checkbox" id="optRaw"><span>Original code download karo<small>Formatting se pehle jaisa site par tha, bilkul waisa hi</small></span></label>
+    </div>
   </section>
   <div class="files" id="files"></div>
 
@@ -235,7 +267,7 @@ function prep(code,type){
   if($('optPretty').checked&&looksMinified(code))code=pretty(code,type);
   return code;
 }
-function shortName(u,base){try{const x=new URL(u);const b=new URL(base);return (x.host===b.host?'':x.host)+x.pathname+(x.search||'')}catch(e){return u}}
+function shortName(u,base){try{const x=new URL(u);const b=new URL(base);let p=x.pathname;if(p.endsWith('/'))p+='index.html';if(x.host===b.host)p=p.replace(/^\//,'');return (x.host===b.host?'':x.host)+p+(x.search||'')}catch(e){return u}}
 
 async function run(){
   if(busy)return;
@@ -247,7 +279,7 @@ async function run(){
     const ext=(name.split('.').pop()||'').toLowerCase();
     const type=ext==='css'?'css':ext==='js'||ext==='mjs'?'js':ext==='html'||ext==='htm'?'html':'txt';
     pageUrl=name;
-    files.push({name,url:name,type,code:prep(code,type),bytes:new Blob([code]).size});
+    files.push({name,url:name,type,code:prep(code,type),raw:code.replace(/\r\n?/g,'\n'),bytes:new Blob([code]).size});
     setProg(1);showFiles();setStatus('Taiyaar. Ab “PDF download karo” dabao.','ok');return;
   }
   const url=normUrl($('url').value);
@@ -258,7 +290,7 @@ async function run(){
     const html=await getText(url);
     if(/<title>\s*Just a moment/i.test(html)||/cf-browser-verification|challenge-platform/i.test(html))
       setStatus('Is site ne bot-protection page bheja hai. Asli code shayad na mile.','warn');
-    files.push({name:shortName(url,url)||'index.html',url,type:'html',code:prep(html,'html'),bytes:new Blob([html]).size});
+    files.push({name:shortName(url,url)||'index.html',url,type:'html',code:prep(html,'html'),raw:html.replace(/\r\n?/g,'\n'),bytes:new Blob([html]).size});
     if($('optLinked').checked){
       const doc=new DOMParser().parseFromString(html,'text/html');
       const baseEl=doc.querySelector('base[href]');let base=url;
@@ -277,8 +309,8 @@ async function run(){
       const todo=list.slice(0,MAX_FILES);let failed=0;
       for(let i=0;i<todo.length;i++){
         const f=todo[i];setStatus(`Linked files: ${i+1} / ${todo.length}…`,'',true);setProg(.1+.85*(i+1)/todo.length);
-        try{const c=await getText(f.url);files.push({name:shortName(f.url,url),url:f.url,type:f.type,code:prep(c,f.type),bytes:new Blob([c]).size})}
-        catch(e){failed++;files.push({name:shortName(f.url,url),url:f.url,type:f.type,code:'/* Ye file load nahi hui: '+(e.message||e)+' */',bytes:0,failed:true})}
+        try{const c=await getText(f.url);files.push({name:shortName(f.url,url),url:f.url,type:f.type,code:prep(c,f.type),raw:c.replace(/\r\n?/g,'\n'),bytes:new Blob([c]).size})}
+        catch(e){failed++;files.push({name:shortName(f.url,url),url:f.url,type:f.type,code:'/* Ye file load nahi hui: '+(e.message||e)+' */',raw:'',bytes:0,failed:true})}
       }
       let msg=`${files.length} file${files.length>1?'s':''} mil gayi.`;
       if(skipped)msg+=` ${skipped} CDN library skip ki.`;
@@ -286,7 +318,7 @@ async function run(){
       if(list.length>MAX_FILES)msg+=` Sirf pehli ${MAX_FILES} linked files li.`;
       setStatus(msg+' Ab “PDF download karo” dabao.',failed?'warn':'ok');
     }else setStatus('Page ka code mil gaya. Ab “PDF download karo” dabao.','ok');
-    setProg(1);showFiles();
+    setProg(1);showFiles();addRecent(url);
   }catch(e){
     setProg(0);
     setStatus('Ye link khul nahi paya ('+esc(String(e.message||e))+'). Link check karo, ya page kholkar uska code “Code paste karo” tab mein daalo.','bad');
@@ -304,7 +336,7 @@ function showFiles(){
     const d=document.createElement('details');d.className='file';if(i===0)d.open=true;
     d.innerHTML=`<summary><span class="tag">${f.type}</span><span class="fname" title="${esc(f.url)}">${esc(f.name)}</span><span class="meta">${lines.length.toLocaleString('en-IN')} lines</span></summary>
       <pre class="code">${shown.map((l,n)=>`<span class="ln">${n+1}</span>${esc(l)}`).join('\n')}${lines.length>300?`<span class="more">… ${lines.length-300} aur lines PDF mein milengi</span>`:''}</pre>
-      <div class="ftools"><button type="button" class="btn" data-copy="${i}">Copy code</button></div>`;
+      <div class="ftools"><button type="button" class="btn" data-copy="${i}">Copy code</button>${f.failed?'':`<div class="dl"><select aria-label="Download format" data-fmt="${i}">${FORMATS.map(x=>`<option value="${x}"${x===extOf(f)?' selected':''}>.${x}${x===extOf(f)?' (asli)':''}</option>`).join('')}</select><button type="button" class="btn" data-dl="${i}">Download</button></div>`}</div>`;
     box.appendChild(d);
   });
   box.querySelectorAll('[data-copy]').forEach(b=>b.onclick=async()=>{
@@ -313,12 +345,104 @@ function showFiles(){
     catch(e){const t=document.createElement('textarea');t.value=f.code;document.body.appendChild(t);t.select();try{document.execCommand('copy');b.textContent='Copied'}catch(_){b.textContent='Copy nahi hua'}t.remove()}
     setTimeout(()=>b.textContent='Copy code',1500);
   });
+  box.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.dl,fmt=box.querySelector(`[data-fmt="${i}"]`).value;downloadOne(files[i],fmt);
+    b.textContent='Saved';setTimeout(()=>b.textContent='Download',1500);
+  });
+  const hasHtml=files.some(f=>f.type==='html'&&!f.failed);
+  $('xSingle').disabled=!hasHtml;$('xZip').disabled=!window.JSZip;
   $('pdfBtn').disabled=false;
 }
 
+/* ---------- file downloads ---------- */
+const FORMATS=['html','css','js','txt','json','md'];
+const MIME={html:'text/html',css:'text/css',js:'text/javascript',txt:'text/plain',json:'application/json',md:'text/markdown'};
+const LANG={html:'html',css:'css',js:'javascript',txt:''};
+function extOf(f){const m=(f.name.split('?')[0].match(/\.([a-z0-9]+)$/i)||[])[1];const e=(m||'').toLowerCase();if(e==='htm')return 'html';if(e==='mjs'||e==='cjs')return 'js';return FORMATS.includes(e)?e:(f.type==='txt'?'txt':f.type)}
+function codeOf(f){return $('optRaw').checked&&f.raw?f.raw:f.code}
+function baseName(f){let n=f.name.split('?')[0].split('/').filter(Boolean).pop()||'index.html';n=n.replace(/\.[a-z0-9]+$/i,'');return n.replace(/[^\w.-]+/g,'_')||'code'}
+function siteTag(){try{return new URL(pageUrl).host.replace(/[^\w.-]+/g,'_')}catch(e){return (pageUrl||'code').replace(/\.[a-z0-9]+$/i,'').replace(/[^\w.-]+/g,'_')}}
+function saveFile(name,content,mime){
+  const blob=content instanceof Blob?content:new Blob([content],{type:(mime||'text/plain')+';charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.rel='noopener';
+  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},5000);
+  setStatus('Download ho gaya: '+esc(name)+'. Download folder check karo.','ok');
+}
+function asFormat(f,fmt){
+  const code=codeOf(f);
+  if(fmt==='json')return JSON.stringify({file:f.name,url:f.url,type:f.type,lines:code.split('\n').length,code},null,2);
+  if(fmt==='md')return `# ${f.name}\n\nSource: ${f.url}\n\n\`\`\`${LANG[f.type]||''}\n${code}\n\`\`\`\n`;
+  return code;
+}
+function downloadOne(f,fmt){saveFile(baseName(f)+'.'+fmt,asFormat(f,fmt),MIME[fmt])}
+// Main HTML ke andar linked CSS/JS jod kar ek hi chalne wali file banata hai
+function buildSingle(){
+  const main=files.find(f=>f.type==='html'&&!f.failed);if(!main)return null;
+  const doc=new DOMParser().parseFromString(codeOf(main),'text/html');
+  let base=main.url;try{const b=doc.querySelector('base[href]');if(b)base=new URL(b.getAttribute('href'),main.url).href}catch(e){}
+  const byUrl=new Map(files.filter(f=>!f.failed&&f!==main).map(f=>[f.url,f]));
+  const abs=h=>{try{return new URL(h,base).href}catch(e){return null}};
+  let inlined=0;
+  doc.querySelectorAll('link[href]').forEach(l=>{
+    if(!(l.getAttribute('rel')||'').toLowerCase().includes('stylesheet'))return;
+    const f=byUrl.get(abs(l.getAttribute('href')));if(!f)return;
+    const st=doc.createElement('style');if(l.media)st.media=l.media;
+    st.textContent='\n/* ---- '+f.name+' ---- */\n'+codeOf(f)+'\n';l.replaceWith(st);inlined++;
+  });
+  doc.querySelectorAll('script[src]').forEach(sc=>{
+    const f=byUrl.get(abs(sc.getAttribute('src')));if(!f)return;
+    const n=doc.createElement('script');for(const at of sc.attributes)if(!['src','defer','async','integrity','crossorigin'].includes(at.name))n.setAttribute(at.name,at.value);
+    n.textContent='\n/* ---- '+f.name+' ---- */\n'+codeOf(f).replace(/<\/script/gi,'<\\/script')+'\n';sc.replaceWith(n);inlined++;
+  });
+  const dt=doc.doctype?'<!DOCTYPE '+doc.doctype.name+'>\n':'<!doctype html>\n';
+  return {html:dt+doc.documentElement.outerHTML+'\n',inlined};
+}
+function allAsText(md){
+  return files.map(f=>md?`## ${f.name}\n\nSource: ${f.url}\n\n\`\`\`${LANG[f.type]||''}\n${codeOf(f)}\n\`\`\``:`${'='.repeat(70)}\n FILE: ${f.name}\n SOURCE: ${f.url}\n${'='.repeat(70)}\n\n${codeOf(f)}\n`).join('\n\n');
+}
+$('xSingle').onclick=()=>{const r=buildSingle();if(!r){setStatus('Isme koi HTML file nahi hai.','bad');return}saveFile(siteTag()+'_single.html',r.html,MIME.html);setStatus(`Ek HTML file ban gayi (${r.inlined} CSS/JS file andar jodi). Download folder check karo.`,'ok')};
+$('xTxt').onclick=()=>saveFile(siteTag()+'_code.txt',allAsText(false),MIME.txt);
+$('xMd').onclick=()=>saveFile(siteTag()+'_code.md',`# Source Code\n\nLink: ${pageUrl}\n\nGenerated: ${new Date().toLocaleString('en-IN')}\n\n`+allAsText(true)+'\n\n---\nDesigned & Developed by: Sharad Kumar\n',MIME.md);
+$('xZip').onclick=async()=>{
+  if(!window.JSZip){setStatus('ZIP library load nahi hui. Internet check karke reload karo.','bad');return}
+  const zip=new JSZip(),used=new Set();let host='';try{host=new URL(pageUrl).host}catch(e){}
+  for(const f of files){
+    if(f.failed)continue;
+    let path;try{const u=new URL(f.url);path=(u.host===host?'':u.host+'/')+u.pathname.replace(/^\/+/,'');if(!path||path.endsWith('/'))path+='index.html'}catch(e){path=f.name}
+    path=path.split('/').map(s=>s.replace(/[^\w.-]+/g,'_')).join('/');
+    let p=path,k=2;while(used.has(p))p=path.replace(/(\.[a-z0-9]+)?$/i,'_'+(k++)+'$1');used.add(p);
+    zip.file(p,codeOf(f));
+  }
+  const r=buildSingle();if(r)zip.file('_single-file.html',r.html);
+  setStatus('ZIP ban rahi hai…','',true);
+  const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
+  saveFile(siteTag()+'_code.zip',blob);
+};
+
+/* ---------- recent links + saved settings ---------- */
+const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+function addRecent(u){let r=store.get('codepdf_recent',[]).filter(x=>x!==u);r.unshift(u);store.set('codepdf_recent',r.slice(0,6));renderRecent()}
+function renderRecent(){
+  const r=store.get('codepdf_recent',[]),box=$('recent');box.hidden=!r.length;if(!r.length){box.innerHTML='';return}
+  box.innerHTML='<span class="lbl">Pichhle links:</span>'+r.map((u,i)=>`<button type="button" class="chipbtn" data-r="${i}" title="${esc(u)}">${esc(u.replace(/^https?:\/\//,'').replace(/\/$/,''))}</button>`).join('')+'<button type="button" class="chipbtn clear" id="recentClear">Saaf karo</button>';
+  box.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{$('url').value=r[+b.dataset.r];run()});
+  $('recentClear').onclick=()=>{store.set('codepdf_recent',[]);renderRecent()};
+}
+const SAVED=['optLinked','optSkipLib','optPretty','optShortData','optRaw'];
+const prefs=store.get('codepdf_prefs',{});
+SAVED.forEach(id=>{if(typeof prefs[id]==='boolean')$(id).checked=prefs[id];$(id).addEventListener('change',()=>{prefs[id]=$(id).checked;store.set('codepdf_prefs',prefs)})});
+if(prefs.fontSize)$('fontSize').value=prefs.fontSize;
+$('fontSize').addEventListener('change',()=>{prefs.fontSize=$('fontSize').value;store.set('codepdf_prefs',prefs)});
+renderRecent();
+
 /* ---------- PDF ---------- */
 // The built-in PDF font (Courier) only knows Latin-1, so other characters are written as \u{...} codes.
-function latin1(s){return s.replace(/\t/g,'  ').replace(/[^\x20-\x7E\xA0-\xFF]/gu,c=>'\\u{'+c.codePointAt(0).toString(16)+'}')}
+const PUNCT={'\u201c':'"','\u201d':'"','\u201e':'"','\u2018':"'",'\u2019':"'",'\u201a':"'",'\u2013':'-','\u2014':'--','\u2212':'-','\u2026':'...','\u2192':'->','\u2190':'<-','\u21d2':'=>','\u2194':'<->','\u2191':'^','\u2193':'v','\u2022':'*','\u25cf':'*','\u00b7':'\u00b7','\u20b9':'Rs.','\u2713':'v','\u2714':'v','\u2715':'x','\u2716':'x','\u2264':'<=','\u2265':'>=','\u2260':'!=','\u2248':'~','\u2122':'(TM)','\u2009':' ','\u200a':' ','\u2002':' ','\u2003':' ','\u200b':'','\ufeff':''};
+function pdfCode(code){
+  if($('optShortData').checked)code=code.replace(/data:([\w.+-]+\/[\w.+-]+)((?:;[\w-]+=[\w-]+)*);base64,([A-Za-z0-9+\/=\s]{200,})/g,(m,t,par,d)=>'data:'+t+par+';base64,[image data \u00b7 '+Math.max(1,Math.round(d.replace(/\s/g,'').length*.75/1024))+' KB hidden]');
+  return code;
+}
+function latin1(s){return s.replace(/[\u2018-\u201e\u2013\u2014\u2212\u2026\u2190-\u2194\u21d2\u2022\u25cf\u20b9\u2713-\u2716\u2260\u2264\u2265\u2248\u2122\u2002\u2003\u2009\u200a\u200b\ufeff]/g,c=>PUNCT[c]!==undefined?PUNCT[c]:c).replace(/\t/g,'  ').replace(/[^\x20-\x7E\xA0-\xFF]/gu,c=>'\\u{'+c.codePointAt(0).toString(16)+'}')}
 async function makePdf(){
   if(!files.length||busy)return;
   if(!window.jspdf){setStatus('PDF library load nahi hui. Internet check karke page reload karo.','bad');return}
@@ -341,11 +465,11 @@ async function makePdf(){
     doc.setTextColor(0);doc.setFont('helvetica','bold');doc.setFontSize(12);doc.text('Files',M,M+56);
     doc.setFont('courier','normal');doc.setFontSize(9);
     let y=M+64;
-    files.forEach((f,i)=>{if(y>PH-30){doc.addPage();y=M+10}const n=f.code.split('\n').length;const line=`${String(i+1).padStart(2,' ')}. [${f.type.toUpperCase()}] ${f.name}`;const w=doc.splitTextToSize(latin1(line),PW-2*M-30);doc.text(w,M,y);doc.text(n+' lines',PW-M,y,{align:'right'});y+=w.length*4.2+1.5});
+    files.forEach((f,i)=>{if(y>PH-30){doc.addPage();y=M+10}const n=pdfCode(f.code).split('\n').length;const line=`${String(i+1).padStart(2,' ')}. [${f.type.toUpperCase()}] ${f.name}`;const w=doc.splitTextToSize(latin1(line),PW-2*M-30);doc.text(w,M,y);doc.text(n+' lines',PW-M,y,{align:'right'});y+=w.length*4.2+1.5});
     doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(110);
     doc.text('Designed & Developed by: Sharad Kumar',M,PH-M);doc.setTextColor(0);
     // files
-    const totalLines=files.reduce((n,f)=>n+f.code.split('\n').length,0);let done=0;
+    const totalLines=files.reduce((n,f)=>n+pdfCode(f.code).split('\n').length,0);let done=0;
     for(let fi=0;fi<files.length;fi++){
       const f=files[fi];doc.addPage();
       const header=latin1(`${f.type.toUpperCase()}  ${f.name}`);
@@ -353,7 +477,7 @@ async function makePdf(){
         const t=doc.splitTextToSize(header+(cont?'  (contd.)':''),PW-2*M-4)[0];doc.text(t,M+2,M+4.4);doc.setTextColor(0)};
       drawHead(false);
       doc.setFont('courier','normal');doc.setFontSize(fs);
-      let row=0;const lines=f.code.split('\n');
+      let row=0;const lines=pdfCode(f.code).split('\n');
       for(let li=0;li<lines.length;li++){
         const raw=latin1(lines[li]);const parts=[];
         if(!raw.length)parts.push('');else for(let p=0;p<raw.length;p+=maxChars)parts.push(raw.slice(p,p+maxChars));
