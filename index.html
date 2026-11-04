@@ -102,6 +102,24 @@ details.file summary::-webkit-details-marker{display:none}
 .ftools .dl select{border-radius:8px 0 0 8px;border-right:0}
 .ftools .dl .btn{border-radius:0 8px 8px 0;background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .export{margin-top:14px;display:flex;flex-direction:column;gap:12px}
+.analysis{margin-top:14px;display:flex;flex-direction:column;gap:12px}
+.analysis h2{margin:0;font-size:17px}
+.analysis .sub2{margin:-6px 0 0;font-size:13px;color:var(--muted)}
+.agroup{display:flex;flex-direction:column;gap:7px}
+.agroup .ghead{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:8px}
+.agroup .ghead::after{content:"";flex:1;height:1px;background:var(--line)}
+.acard{display:flex;gap:10px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+.acard .dot{width:9px;height:9px;border-radius:50%;margin-top:5px;flex:none;background:var(--accent)}
+.acard.sec .dot{background:var(--warn)}
+.acard.backend .dot{background:#1d7a46}
+.acard .txt{min-width:0}
+.acard .nm{font-weight:600;font-size:14px}
+.acard .ds{font-size:12.5px;color:var(--muted);line-height:1.45}
+.acard .ev{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--sunk);border-radius:4px;padding:1px 5px;margin-top:3px;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.secnote{font-size:12px;color:var(--warn);background:rgba(161,92,0,.1);border:1px solid var(--warn);border-radius:8px;padding:9px 11px}
+.anone{font-size:13px;color:var(--muted)}
+.hosts{display:flex;flex-wrap:wrap;gap:6px}
+.hosts .hchip{font:11px var(--mono);background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:3px 9px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .export h2{margin:0;font-size:17px}
 .export .sub2{margin:-6px 0 0;font-size:13px;color:var(--muted)}
 .xgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
@@ -186,6 +204,11 @@ footer b{color:var(--fg)}
 
   <section id="results" hidden>
     <div class="summary" id="summary"></div>
+    <div class="card analysis" id="analysisBox" hidden>
+      <h2>Kya use hua hai</h2>
+      <p class="sub2">Tool ne code padh kar bataya ki ismein konsi tech lagi hai aur kaise. Yahin se seekho, phir modify karo.</p>
+      <div id="analysisBody"></div>
+    </div>
     <div class="card export" id="exportBox">
       <h2>Files download karo</h2>
       <p class="sub2">Ek click mein code ko asli file ki tarah save karo. Har file ke neeche bhi apna format chun kar download kar sakte ho.</p>
@@ -352,6 +375,84 @@ function showFiles(){
   const hasHtml=files.some(f=>f.type==='html'&&!f.failed);
   $('xSingle').disabled=!hasHtml;$('xZip').disabled=!window.JSZip;
   $('pdfBtn').disabled=false;
+  renderAnalysis();
+}
+
+/* ---------- code analysis (learning) ---------- */
+const GROUPS={backend:'Backend aur Cloud',lib:'Framework aur Library',style:'Styling',store:'Browser mein data',feat:'Features'};
+const SIGS=[
+  {g:'backend',cat:'backend',nm:'Supabase',re:/supabase|\.supabase\.co/i,ds:'Cloud backend + database. App isse login check karta aur data save/load karta hai. (Yahi aap use karte ho)'},
+  {g:'backend',cat:'backend',nm:'Firebase',re:/firebase|firebaseio\.com|firestore/i,ds:'Google ka cloud backend + realtime database. Supabase jaisa kaam.'},
+  {g:'backend',cat:'backend',nm:'AWS',re:/amazonaws\.com/i,ds:'Amazon ka cloud server/storage.'},
+  {g:'backend',cat:'backend',nm:'Google Sheets / Apps Script',re:/sheets\.googleapis|script\.google\.com/i,ds:'Google Sheet ko hi database ki tarah use kiya ja raha hai.'},
+  {g:'backend',cat:'backend',nm:'Airtable',re:/airtable\.com/i,ds:'Online spreadsheet-database jo backend ki tarah chalta hai.'},
+  {g:'backend',cat:'backend',nm:'GraphQL API',re:/graphql/i,ds:'Ek tarah ki API jisse app exact data maang kar laata hai.'},
+  {g:'backend',cat:'backend',nm:'WordPress',re:/wp-json|wp-content/i,ds:'Site WordPress par bani hai; data wp-json API se aata hai.'},
+  {g:'backend',cat:'backend',nm:'PHP backend',re:/\.php(["'?\/]|$)/i,ds:'Server par PHP chal raha hai jo data handle karta hai.'},
+  {g:'backend',cat:'backend',nm:'Custom REST API',re:/["'`]\/api\//i,ds:'App apne hi server ke /api/ endpoints se data laata hai.'},
+  {g:'backend',cat:'backend',nm:'Razorpay',re:/razorpay/i,ds:'Online payment lene ka system (India).'},
+  {g:'backend',cat:'backend',nm:'Stripe',re:/stripe/i,ds:'Online payment lene ka system.'},
+  {g:'lib',cat:'lib',nm:'React',re:/react(-dom|\.production|\.development)|React\.createElement|useState\(/i,ds:'UI banane ki popular library (Facebook).'},
+  {g:'lib',cat:'lib',nm:'Next.js',re:/__NEXT_DATA__|\/_next\//i,ds:'React par bana framework, server-side rendering ke saath.'},
+  {g:'lib',cat:'lib',nm:'Vue',re:/vue(\.|@|\/dist)|Vue\.createApp|v-for=|v-if=/i,ds:'React jaisi UI library, seekhne mein aasaan.'},
+  {g:'lib',cat:'lib',nm:'Angular',re:/angular|ng-app|ng-model/i,ds:'Google ka bada UI framework.'},
+  {g:'lib',cat:'lib',nm:'Svelte',re:/svelte/i,ds:'Nayi, halki UI library.'},
+  {g:'lib',cat:'lib',nm:'Alpine.js',re:/alpinejs|x-data=/i,ds:'Chhoti library, HTML ke andar hi thoda interactivity.'},
+  {g:'lib',cat:'lib',nm:'jQuery',re:/jquery/i,ds:'Purani popular library, DOM aur AJAX aasaan karti hai.'},
+  {g:'lib',cat:'lib',nm:'Chart.js',re:/chart\.js|new Chart\(/i,ds:'Graph/chart banane ki library.'},
+  {g:'lib',cat:'lib',nm:'D3.js',re:/d3\.min|d3\.v\d|d3js/i,ds:'Advanced data visualization.'},
+  {g:'lib',cat:'lib',nm:'Three.js',re:/three\.min|three\.module|THREE\./,ds:'3D graphics browser mein.'},
+  {g:'lib',cat:'lib',nm:'GSAP',re:/gsap|TweenMax/i,ds:'Smooth animation library.'},
+  {g:'lib',cat:'lib',nm:'jsPDF',re:/jspdf/i,ds:'Browser mein PDF banane ki library. (Isi tool mein bhi hai)'},
+  {g:'lib',cat:'lib',nm:'SheetJS (xlsx)',re:/xlsx|sheetjs/i,ds:'Excel file padhne/banane ki library.'},
+  {g:'lib',cat:'lib',nm:'Supabase JS SDK',re:/supabase-js|createClient\(/i,ds:'Supabase se baat karne ki ready library.'},
+  {g:'style',cat:'style',nm:'Tailwind CSS',re:/tailwind/i,ds:'Class likh kar styling karne wala system.'},
+  {g:'style',cat:'style',nm:'Bootstrap',re:/bootstrap/i,ds:'Ready-made design components.'},
+  {g:'style',cat:'style',nm:'Font Awesome',re:/font-?awesome/i,ds:'Icon ki library.'},
+  {g:'style',cat:'style',nm:'Google Fonts',re:/fonts\.googleapis\.com/i,ds:'Online fonts.'},
+  {g:'store',cat:'store',nm:'localStorage',re:/localStorage/,ds:'Data us device ke browser mein save hota hai (offline rehta hai).'},
+  {g:'store',cat:'store',nm:'IndexedDB',re:/indexedDB/,ds:'Browser ka bada local database.'},
+  {g:'store',cat:'store',nm:'Cookies',re:/document\.cookie/,ds:'Chhoti si cheezein browser mein save (jaise login token).'},
+  {g:'feat',cat:'feat',nm:'PWA (installable app)',re:/serviceworker|rel=["']?manifest|manifest\.json/i,ds:'Site ko app ki tarah install kiya ja sakta hai. (Isi tool mein bhi hai)'},
+  {g:'feat',cat:'feat',nm:'Login system',re:/type=["']?password|"login"|signin/i,ds:'User/password se access control.'},
+  {g:'feat',cat:'feat',nm:'File/photo upload',re:/type=["']?file|FileReader/i,ds:'User file upload kar sakta hai.'},
+  {g:'feat',cat:'feat',nm:'Map',re:/maps\.google|mapbox|leaflet/i,ds:'Naksha dikhane wala feature.'},
+];
+function analyzeCode(){
+  const all=files.map(f=>f.raw||f.code).join('\n');
+  const found={backend:[],lib:[],style:[],store:[],feat:[]};
+  for(const sig of SIGS){if(sig.re.test(all))found[sig.g].push(sig)}
+  // external hosts jinse app baat karta hai
+  const hosts=new Set();
+  (all.match(/https?:\/\/[a-z0-9.-]+/gi)||[]).forEach(u=>{try{hosts.add(new URL(u).host.toLowerCase())}catch(e){}});
+  // security clues (seekhne ke liye) — JWT jaisi keys
+  const sec=[];
+  if(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}/.test(all))
+    sec.push({nm:'Ek token/key code mein khula dikh raha hai',ds:'Supabase/Firebase ki "anon key" public hoti hai, wo theek hai (Row Level Security use karo). Lekin "service key" ya secret kabhi frontend mein mat rakhna — wo sabko dikh jati hai.'});
+  if(/AIza[0-9A-Za-z_-]{20,}/.test(all))
+    sec.push({nm:'Google API key khuli dikh rahi hai',ds:'Google Cloud mein us key par domain/website restriction laga do, warna koi aur bhi use kar sakta hai.'});
+  if(/(password|passwd|secret|apikey|api_key)\s*[:=]\s*["'][^"']{4,}["']/i.test(all))
+    sec.push({nm:'Password/secret code mein likha dikh raha hai',ds:'Seedha code mein password rakhna surakshit nahi — ise server par rakho (jaise Supabase function mein).'});
+  return {found,hosts:[...hosts],sec};
+}
+function renderAnalysis(){
+  const box=$('analysisBox'),body=$('analysisBody');
+  if(!files.length){box.hidden=true;return}
+  const a=analyzeCode();box.hidden=false;
+  const cnt=Object.values(a.found).reduce((n,x)=>n+x.length,0);
+  let h='';
+  if(!cnt&&!a.sec.length)h+='<p class="anone">Koi khaas tech signature nahi mili. Ho sakta hai ye simple HTML/CSS site ho, ya code minified ho. Network tab (PC par F12) se aur pata chalega.</p>';
+  for(const g in GROUPS){
+    const list=a.found[g];if(!list.length)continue;
+    h+=`<div class="agroup"><div class="ghead">${esc(GROUPS[g])}</div>`+list.map(s=>`<div class="acard ${s.cat}"><span class="dot"></span><div class="txt"><div class="nm">${esc(s.nm)}</div><div class="ds">${esc(s.ds)}</div></div></div>`).join('')+'</div>';
+  }
+  if(a.sec.length){
+    h+='<div class="agroup"><div class="ghead">Security — seekhne layak</div>'+a.sec.map(x=>`<div class="acard sec"><span class="dot"></span><div class="txt"><div class="nm">${esc(x.nm)}</div><div class="ds">${esc(x.ds)}</div></div></div>`).join('')+'</div>';
+  }
+  if(a.hosts.length){
+    h+=`<div class="agroup"><div class="ghead">Ye app in jagah se baat karta hai</div><div class="hosts">${a.hosts.slice(0,25).map(x=>`<span class="hchip">${esc(x)}</span>`).join('')}</div><p class="sub2">Inme se jo site ka apna domain ya backend (jaise supabase.co) hai, wahan se data aata-jaata hai. Baaki CDN/fonts hote hain.</p></div>`;
+  }
+  body.innerHTML=h;
 }
 
 /* ---------- file downloads ---------- */
